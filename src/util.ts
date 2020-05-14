@@ -158,7 +158,7 @@ export async function getCommitOid(): Promise<string> {
             stderr: (data) => { process.stderr.write(data); }
         }
     });
-    return commitOid;
+    return commitOid.trim();
 }
 
 /**
