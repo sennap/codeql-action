@@ -4,6 +4,7 @@ import * as auth from '@actions/http-client/auth';
 import * as io from '@actions/io';
 import fileUrl from 'file-url';
 import * as fs from 'fs';
+import * as jsonschema from 'jsonschema';
 import * as path from 'path';
 import zlib from 'zlib';
 
@@ -128,12 +129,29 @@ export async function upload(input: string): Promise<boolean> {
     }
 }
 
+// Validates that the given file path refers to a valid SARIF file.
+// Returns a non-empty list of error message if the file is invalid,
+// otherwise returns the empty list if the file is valid.
+export function validateSarifFileSchema(sarifFilePath: string): string[] {
+    const sarif = JSON.parse(fs.readFileSync(sarifFilePath, 'utf8'));
+    const schema = JSON.parse(fs.readFileSync(__dirname + '/../src/sarif_v2.1.0_schema.json', 'utf8'));
+
+    const result = new jsonschema.Validator().validate(sarif, schema);
+    if (result.valid) {
+        return [];
+    } else {
+        return result.errors.map(e => e.message);
+    }
+}
+
 // Uploads the given set of sarif files.
 // Returns true iff the upload occurred and succeeded
 async function uploadFiles(sarifFiles: string[]): Promise<boolean> {
     core.startGroup("Uploading results");
     let succeeded = false;
     try {
+        core.info("Uploading sarif files: " + JSON.stringify(sarifFiles));
+
         // Check if an upload has happened before. If so then abort.
         // This is intended to catch when the finish and upload-sarif actions
         // are used together, and then the upload-sarif action is invoked twice.
@@ -143,6 +161,15 @@ async function uploadFiles(sarifFiles: string[]): Promise<boolean> {
             return false;
         }
 
+        // Validate that the files we were asked to upload are all valid SARIF files
+        for (const file of sarifFiles) {
+            const errors = validateSarifFileSchema(file);
+            if (errors.length > 0) {
+                core.setFailed("Unable to upload \"" + file + "\" as it is not valid SARIF:\n" + errors.join("\n"));
+                return false;
+            }
+        }
+
         const commitOid = util.getRequiredEnvParam('GITHUB_SHA');
         const workflowRunIDStr = util.getRequiredEnvParam('GITHUB_RUN_ID');
         const ref = util.getRef();
@@ -150,7 +177,6 @@ async function uploadFiles(sarifFiles: string[]): Promise<boolean> {
         const analysisName = util.getRequiredEnvParam('GITHUB_WORKFLOW');
         const startedAt = process.env[sharedEnv.CODEQL_ACTION_STARTED_AT];
 
-        core.info("Uploading sarif files: " + JSON.stringify(sarifFiles));
         let sarifPayload = combineSarifFiles(sarifFiles);
         sarifPayload = fingerprints.addFingerprints(sarifPayload);
 
