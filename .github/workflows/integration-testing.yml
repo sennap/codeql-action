@@ -24,7 +24,7 @@ jobs:
         TEST_MODE: true
     - run: |
         cd "$CODEQL_ACTION_DATABASE_DIR"
-        if [ "$(ls | wc -l)" != 6 ] || \
+        if [ "$(ls | wc -l)" != 5 ] || \
            [[ ! -d cpp ]] || \
            [[ ! -d csharp ]] || \
            [[ ! -d go ]] || \
